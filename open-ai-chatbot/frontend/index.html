@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Chatbot</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f0f2f5;
+      display: flex;
+      justify-content: center;
+      height: 100vh;
+    }
+    .app {
+      width: 100%;
+      max-width: 720px;
+      display: flex;
+      flex-direction: column;
+      background: #fff;
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.08);
+    }
+    header {
+      padding: 16px 20px;
+      background: #4f46e5;
+      color: #fff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    header h1 { margin: 0; font-size: 18px; }
+    header button {
+      background: rgba(255, 255, 255, 0.2);
+      color: #fff;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    #chat {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .msg {
+      max-width: 75%;
+      padding: 10px 14px;
+      border-radius: 16px;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+    .msg .time { display: block; font-size: 11px; opacity: 0.6; margin-top: 4px; }
+    .user { align-self: flex-end; background: #4f46e5; color: #fff; border-bottom-right-radius: 4px; }
+    .ai { align-self: flex-start; background: #eef0f4; color: #111; border-bottom-left-radius: 4px; }
+    .error { align-self: center; background: #fde8e8; color: #b91c1c; font-size: 14px; }
+    .typing { font-style: italic; color: #666; }
+    .empty { margin: auto; color: #999; text-align: center; }
+    .user-info { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+    #login {
+      flex: 1; display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 12px; padding: 20px;
+    }
+    #login input {
+      width: 260px; padding: 10px 12px; border: 1px solid #d1d5db;
+      border-radius: 10px; font: inherit;
+    }
+    #login button {
+      width: 260px; padding: 10px; border: none; border-radius: 10px;
+      background: #4f46e5; color: #fff; font-weight: 600; cursor: pointer;
+    }
+    .hidden { display: none !important; }
+    form {
+      display: flex;
+      gap: 8px;
+      padding: 12px;
+      border-top: 1px solid #e5e7eb;
+    }
+    textarea {
+      flex: 1;
+      resize: none;
+      padding: 10px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 10px;
+      font: inherit;
+      height: 44px;
+    }
+    textarea:focus { outline: 2px solid #4f46e5; border-color: transparent; }
+    form button {
+      padding: 0 20px;
+      border: none;
+      border-radius: 10px;
+      background: #4f46e5;
+      color: #fff;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    form button:disabled { background: #a5a6f6; cursor: not-allowed; }
+    #stats { border-top: 1px solid #e5e7eb; padding: 12px 16px 16px; }
+    .averages { display: flex; gap: 12px; margin-bottom: 8px; }
+    .avg {
+      flex: 1; background: #f7f7fb; border-radius: 10px; padding: 8px 12px; font-size: 13px; color: #555;
+    }
+    .avg b { display: block; font-size: 20px; color: #111; }
+    .avg.total b { color: #4f46e5; }
+    .avg.openai b { color: #10a37f; }
+    .chart-box { position: relative; height: 180px; }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>AI Chatbot</h1>
+      <div class="user-info hidden" id="userInfo">
+        <span id="userLabel"></span>
+        <button id="clearBtn" type="button">Clear chat</button>
+        <button id="logoutBtn" type="button">Switch user</button>
+      </div>
+    </header>
+
+    <form id="login">
+      <h2>Who are you?</h2>
+      <input id="username" placeholder="Enter a username" autocomplete="off">
+      <button type="submit">Start chatting</button>
+    </form>
+
+    <div id="chat" class="hidden">
+      <div class="empty" id="empty">Say hi to start the conversation 👋</div>
+    </div>
+
+    <form id="form" class="hidden">
+      <textarea id="input" placeholder="Type a message... (Enter to send, Shift+Enter for new line)"></textarea>
+      <button id="sendBtn" type="submit">Send</button>
+    </form>
+
+    <!-- Task 9: response time measurements -->
+    <div id="stats" class="hidden">
+      <div class="averages">
+        <div class="avg total">Avg total request time<b id="avgTotal">–</b></div>
+        <div class="avg openai">Avg OpenAI API time<b id="avgOpenai">–</b></div>
+      </div>
+      <div class="chart-box"><canvas id="timesChart"></canvas></div>
+    </div>
+  </div>
+
+  <script>
+    // Replace with your Lambda Function URL
+    const FUNCTION_URL = "https://n5hp45cshn6vv2xkr6gtmgekae0sydgz.lambda-url.us-east-1.on.aws/";
+
+    const chat = document.getElementById("chat");
+    const form = document.getElementById("form");
+    const input = document.getElementById("input");
+    const sendBtn = document.getElementById("sendBtn");
+    const clearBtn = document.getElementById("clearBtn");
+    const loginForm = document.getElementById("login");
+    const usernameInput = document.getElementById("username");
+    const userInfo = document.getElementById("userInfo");
+    const userLabel = document.getElementById("userLabel");
+    const logoutBtn = document.getElementById("logoutBtn");
+
+    const stats = document.getElementById("stats");
+
+    let userId = null;
+
+    // ---- Task 9: response times (kept only for this browser session) ----
+    const totalTimes = [];
+    const openaiTimes = [];
+    const timesChart = new Chart(document.getElementById("timesChart"), {
+      type: "line",
+      data: {
+        labels: [],
+        datasets: [
+          { label: "Total Request Time (ms)", data: totalTimes, borderColor: "#4f46e5", backgroundColor: "#4f46e5", tension: 0.2 },
+          { label: "OpenAI API Time (ms)", data: openaiTimes, borderColor: "#10a37f", backgroundColor: "#10a37f", tension: 0.2 }
+        ]
+      },
+      options: {
+        maintainAspectRatio: false,
+        scales: {
+          x: { title: { display: true, text: "Request #" } },
+          y: { beginAtZero: true, title: { display: true, text: "ms" } }
+        }
+      }
+    });
+
+    function average(arr) {
+      return arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : 0;
+    }
+
+    function recordTimes(totalMs, openaiMs) {
+      totalTimes.push(totalMs);
+      openaiTimes.push(openaiMs);
+      timesChart.data.labels.push(totalTimes.length);
+      timesChart.update();
+      document.getElementById("avgTotal").textContent = average(totalTimes) + " ms";
+      document.getElementById("avgOpenai").textContent = average(openaiTimes) + " ms";
+    }
+    const EMPTY_HTML = '<div class="empty" id="empty">Say hi to start the conversation 👋</div>';
+
+    function login(name) {
+      userId = name;
+      try { localStorage.setItem("chat_user_id", name); } catch (e) {}
+      userLabel.textContent = "👤 " + name;
+      history.length = 0;
+      chat.innerHTML = EMPTY_HTML;
+      loginForm.classList.add("hidden");
+      [chat, form, userInfo, stats].forEach(el => el.classList.remove("hidden"));
+      input.focus();
+      loadHistory();
+    }
+
+    // Load this user's saved conversation from DynamoDB (via the Lambda)
+    async function loadHistory() {
+      const forUser = userId;
+      try {
+        const res = await fetch(FUNCTION_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: forUser, action: "get_history" })
+        });
+        const data = await res.json();
+        if (forUser !== userId) return; // user switched while loading
+        if (!res.ok) {
+          addMessage("error", "Could not load history: " + (data.error || res.status));
+          return;
+        }
+        (data.history || []).forEach(m =>
+          addMessage(m.role === "assistant" ? "ai" : "user", m.content, m.timestamp)
+        );
+      } catch (err) {
+        addMessage("error", "Could not load history: " + err.message);
+      }
+    }
+
+    function logout() {
+      userId = null;
+      try { localStorage.removeItem("chat_user_id"); } catch (e) {}
+      [chat, form, userInfo, stats].forEach(el => el.classList.add("hidden"));
+      loginForm.classList.remove("hidden");
+      usernameInput.value = "";
+      usernameInput.focus();
+    }
+
+    loginForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const name = usernameInput.value.trim();
+      if (name) login(name);
+    });
+
+    logoutBtn.addEventListener("click", logout);
+
+    // Chat history kept on the page for the current session
+    const history = [];
+
+    function now() {
+      return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    }
+
+    function addMessage(role, text, timestamp) {
+      const empty = document.getElementById("empty");
+      if (empty) empty.remove();
+
+      const div = document.createElement("div");
+      div.className = "msg " + role;
+      div.textContent = text;
+
+      if (role !== "error") {
+        const time = document.createElement("span");
+        time.className = "time";
+        time.textContent = timestamp
+          ? new Date(timestamp).toLocaleString([], { dateStyle: "short", timeStyle: "short" })
+          : now();
+        div.appendChild(time);
+        history.push({ role, content: text });
+      }
+
+      chat.appendChild(div);
+      chat.scrollTop = chat.scrollHeight;
+      return div;
+    }
+
+    function showTyping() {
+      const div = document.createElement("div");
+      div.className = "msg ai typing";
+      div.textContent = "Bot is typing...";
+      chat.appendChild(div);
+      chat.scrollTop = chat.scrollHeight;
+      return div;
+    }
+
+    async function sendMessage(text) {
+      addMessage("user", text);
+      sendBtn.disabled = true;
+      const typing = showTyping();
+
+      try {
+        const start = performance.now();
+        const res = await fetch(FUNCTION_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: userId, user_prompt: text })
+        });
+
+        const data = await res.json().catch(() => ({}));
+        const totalMs = Math.round(performance.now() - start);
+        typing.remove();
+
+        if (!res.ok) {
+          addMessage("error", `Error ${res.status}: ${data.error || res.statusText}`);
+        } else {
+          addMessage("ai", data.ai_reply ?? "(empty reply)");
+          recordTimes(totalMs, data.openai_response_time_ms ?? 0);
+        }
+      } catch (err) {
+        typing.remove();
+        addMessage("error", "Network error: " + err.message);
+      } finally {
+        sendBtn.disabled = false;
+        input.focus();
+      }
+    }
+
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const text = input.value.trim();
+      if (!text || sendBtn.disabled) return;
+      input.value = "";
+      sendMessage(text);
+    });
+
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        form.requestSubmit();
+      }
+    });
+
+    clearBtn.addEventListener("click", () => {
+      history.length = 0;
+      chat.innerHTML = EMPTY_HTML;
+      input.focus();
+    });
+
+    // Restore the last user, if any
+    let saved = null;
+    try { saved = localStorage.getItem("chat_user_id"); } catch (e) {}
+    if (saved) login(saved); else usernameInput.focus();
+  </script>
+</body>
+</html>

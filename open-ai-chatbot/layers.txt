@@ -1,0 +1,36 @@
+# AWS Lambda Layer: openai-layer
+
+## Overview
+This custom layer packages the `openai` SDK and its dependencies for an AWS Lambda Python 3.14 (x86_64) runtime.
+
+To prevent binary compatibility errors on Amazon Linux (such as `pydantic_core` compilation issues), pre-compiled Linux wheels (`manylinux2014_x86_64`) were downloaded directly on macOS rather than installing local Darwin binaries.
+
+## Build Steps (macOS)
+```bash
+# 1. Clean up and create standard Lambda python directory structure
+rm -rf openai-layer openai-layer.zip
+mkdir -p openai-layer/python
+
+# 2. Download and install Linux x86_64 wheels for Python 3.14
+pip install \
+  --platform manylinux2014_x86_64 \
+  --target openai-layer/python \
+  --implementation cp \
+  --python-version 3.14 \
+  --only-binary=:all: \
+  --upgrade \
+  openai
+
+# 3. Package the layer into a zip file
+cd openai-layer
+zip -r ../openai-layer.zip python
+cd ..
+```
+
+## AWS Configuration
+1. **Lambda Console:** Navigate to **Layers** > **Create layer**.
+2. **Name:** `openai-layer`
+3. **Upload:** `openai-layer.zip`
+4. **Compatible architectures:** `x86_64`
+5. **Compatible runtimes:** `Python 3.14`
+6. Attached to function `open-ai-chatbot` under **Layers** > **Add a layer**.
