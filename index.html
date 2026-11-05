@@ -101,7 +101,17 @@
       cursor: pointer;
     }
     form button:disabled { background: #a5a6f6; cursor: not-allowed; }
+    #stats { border-top: 1px solid #e5e7eb; padding: 12px 16px 16px; }
+    .averages { display: flex; gap: 12px; margin-bottom: 8px; }
+    .avg {
+      flex: 1; background: #f7f7fb; border-radius: 10px; padding: 8px 12px; font-size: 13px; color: #555;
+    }
+    .avg b { display: block; font-size: 20px; color: #111; }
+    .avg.total b { color: #4f46e5; }
+    .avg.openai b { color: #10a37f; }
+    .chart-box { position: relative; height: 180px; }
   </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
 <body>
   <div class="app">
@@ -128,6 +138,15 @@
       <textarea id="input" placeholder="Type a message... (Enter to send, Shift+Enter for new line)"></textarea>
       <button id="sendBtn" type="submit">Send</button>
     </form>
+
+    <!-- Task 9: response time measurements -->
+    <div id="stats" class="hidden">
+      <div class="averages">
+        <div class="avg total">Avg total request time<b id="avgTotal">–</b></div>
+        <div class="avg openai">Avg OpenAI API time<b id="avgOpenai">–</b></div>
+      </div>
+      <div class="chart-box"><canvas id="timesChart"></canvas></div>
+    </div>
   </div>
 
   <script>
@@ -145,7 +164,43 @@
     const userLabel = document.getElementById("userLabel");
     const logoutBtn = document.getElementById("logoutBtn");
 
+    const stats = document.getElementById("stats");
+
     let userId = null;
+
+    // ---- Task 9: response times (kept only for this browser session) ----
+    const totalTimes = [];
+    const openaiTimes = [];
+    const timesChart = new Chart(document.getElementById("timesChart"), {
+      type: "line",
+      data: {
+        labels: [],
+        datasets: [
+          { label: "Total Request Time (ms)", data: totalTimes, borderColor: "#4f46e5", backgroundColor: "#4f46e5", tension: 0.2 },
+          { label: "OpenAI API Time (ms)", data: openaiTimes, borderColor: "#10a37f", backgroundColor: "#10a37f", tension: 0.2 }
+        ]
+      },
+      options: {
+        maintainAspectRatio: false,
+        scales: {
+          x: { title: { display: true, text: "Request #" } },
+          y: { beginAtZero: true, title: { display: true, text: "ms" } }
+        }
+      }
+    });
+
+    function average(arr) {
+      return arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : 0;
+    }
+
+    function recordTimes(totalMs, openaiMs) {
+      totalTimes.push(totalMs);
+      openaiTimes.push(openaiMs);
+      timesChart.data.labels.push(totalTimes.length);
+      timesChart.update();
+      document.getElementById("avgTotal").textContent = average(totalTimes) + " ms";
+      document.getElementById("avgOpenai").textContent = average(openaiTimes) + " ms";
+    }
     const EMPTY_HTML = '<div class="empty" id="empty">Say hi to start the conversation 👋</div>';
 
     function login(name) {
@@ -155,7 +210,7 @@
       history.length = 0;
       chat.innerHTML = EMPTY_HTML;
       loginForm.classList.add("hidden");
-      [chat, form, userInfo].forEach(el => el.classList.remove("hidden"));
+      [chat, form, userInfo, stats].forEach(el => el.classList.remove("hidden"));
       input.focus();
       loadHistory();
     }
@@ -186,7 +241,7 @@
     function logout() {
       userId = null;
       try { localStorage.removeItem("chat_user_id"); } catch (e) {}
-      [chat, form, userInfo].forEach(el => el.classList.add("hidden"));
+      [chat, form, userInfo, stats].forEach(el => el.classList.add("hidden"));
       loginForm.classList.remove("hidden");
       usernameInput.value = "";
       usernameInput.focus();
@@ -245,6 +300,7 @@
       const typing = showTyping();
 
       try {
+        const start = performance.now();
         const res = await fetch(FUNCTION_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -252,12 +308,14 @@
         });
 
         const data = await res.json().catch(() => ({}));
+        const totalMs = Math.round(performance.now() - start);
         typing.remove();
 
         if (!res.ok) {
           addMessage("error", `Error ${res.status}: ${data.error || res.statusText}`);
         } else {
           addMessage("ai", data.ai_reply ?? "(empty reply)");
+          recordTimes(totalMs, data.openai_response_time_ms ?? 0);
         }
       } catch (err) {
         typing.remove();
