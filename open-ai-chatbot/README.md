@@ -1,7 +1,7 @@
 # Serverless Chatbot
 
 - **Lambda Function URL:** https://n5hp45cshn6vv2xkr6gtmgekae0sydgz.lambda-url.us-east-1.on.aws/
-- **Amplify URL:** https://YOUR-AMPLIFY-URL.amplifyapp.com
+- **Amplify URL:** https://main.d1fu7aav0d4wnz.amplifyapp.com/
 
 ## DynamoDB
 
